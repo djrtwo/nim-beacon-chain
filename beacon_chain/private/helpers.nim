@@ -126,3 +126,15 @@ func get_new_recent_block_hashes*(
   for _ in 0 ..< min(d, old_block_hashes.len):
     result.add parent_hash
 
+func get_beacon_proposer*(state: BeaconState, slot: uint64): ValidatorRecord =
+  ## From Casper RPJ mini-spec:
+  ## When slot i begins, validator Vidx is expected
+  ## to create ("propose") a block, which contains a pointer to some parent block
+  ## that they perceive as the "head of the chain",
+  ## and includes all of the **attestations** that they know about
+  ## that have not yet been included into that chain.
+  ##
+  ## idx in Vidx == p(i mod N), pi being a random permutation of validators indices (i.e. a committee)
+  let first_committee = get_shards_and_committees_for_slot(state, slot)[0]
+  let index = first_committee.committee[slot.int mod first_committee.committee.len]
+  result = state.validators[index]
