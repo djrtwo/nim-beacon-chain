@@ -12,25 +12,37 @@ import ../datatypes, tables, hashes, sets
 
 # Stage 1 does not include justification, finalization and a dynamic validator set
 
+# ############################################################
+#
+#           Data types for Fork Choice Stage 1
+#
+# ############################################################
+
 type
-  BlockChain* = TableRef[Blake2_256_Digest, BeaconBlock]
+  BlockHash* = Blake2_256_Digest
+  BlockChain* = TableRef[BlockHash, BeaconBlock]
+  Slot* = uint64
 
-  SlotBlockHash* = tuple[slot: uint64, block_hash: Blake2_256_Digest]
+  SlotBlockHash* = tuple[slot: Slot, block_hash: BlockHash]
 
-  ForkChoiceState* = object
+  ForkChoiceState* = ref object
     main_chain*: BlockChain
     messages*: TableRef[BLSSig, AttestationSignedData] # Validator messages
     processed*: HashSet[BLSSig]                        # Keep track of processed messages
-    scores*: TableRef[Blake2_256_Digest, int]          # Final score for each proposed block, it is the highest score it has at any slot
+    scores*: TableRef[BlockHash, int]                  # Final score for each proposed block, it is the highest score it has at any slot
     scores_at_slot*: TableRef[SlotBlockHash, int]      # Score at each slot, if missing slot in slot_x < slot_missing < slot_y, use slot_x
 
+# ############################################################
+#
+#           Hash table helpers for Fork Choice Stage 1
+#
+# ############################################################
 
-# HashTables helpers
-func hash*(x: Blake2_256_Digest): Hash =
+func hash*(x: BlockHash): Hash =
   ## Hash for Blake2 digests for Nim hash tables
   # We just slice the first 4 or 8 bytes of the block hash
   # depending of if we are on a 32 or 64-bit platform
-  const size = sizeof(Blake2_256_Digest)
+  const size = sizeof(BlockHash)
   const num_hashes = size div sizeof(int)
 
   result = cast[array[num_hashes, Hash]](x)[0]
@@ -40,3 +52,31 @@ func hash*(x: SlotBlockHash): Hash =
   const size = sizeof(SlotBlockHash)
   result = hash(x.block_hash)
   result = result !& x.slot.int
+
+# ############################################################
+#
+#           Auxiliary procs for block ancestry
+#
+# ############################################################
+
+func get_common_ancestor_slot()
+      fk_choice: ForkChoiceState,
+      a, b: BlockHash
+    ): Slot =
+  
+
+# ############################################################
+#
+#           Core processing for Fork Choice stage 1
+#
+# ############################################################
+
+func on_receive_attestation*(
+        fk_choice: ForkChoiceState,
+        attest_data: AttestationSignedData
+    ) =
+  ## Prerequisites:
+  ##    - During `block_processing`, the `aggregate_sig` verifies the `attest_data`
+  ##      using the group public key
+  ##    - The raw `attest_data` message has been deserialized (via SimpleSerialise SSZ)
+
