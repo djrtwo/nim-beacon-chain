@@ -34,11 +34,11 @@ In v2.1 specs terms
 ```
 slot                      => BeaconBlock.slot
 Validator Vpi mod N       => get_beacon_proposer(BeaconState, slot) -> ValidatorRecord
-Proposed block            => ???
+Proposed block            => ProposalSignedData (?)
 Attestations              => AttestationRecord
 Attestations not included => BeaconState.pending_attestations
 Signed attestation        => AttestationSignedData
-height                    => ??? (probably = slot)
+height                    => slot
 ```
 
 ### Part 3
