@@ -107,12 +107,12 @@ func get_shards_and_committees_for_slot*(state: BeaconState,
   # TODO, slot is a uint64; will be an issue on int32 arch.
   #       Clarify with EF if light clients will need the beacon chain
 
-func get_block_hash*(state: BeaconState, current_block: BeaconBlock, slot: int): Blake2_256_Digest =
+func get_block_hash*(state: BeaconState, current_block: BeaconBlock, slot: uint64): Blake2_256_Digest =
   let earliest_slot_in_array = current_block.slot.int - state.recent_block_hashes.len
-  assert earliest_slot_in_array <= slot
-  assert slot < current_block.slot.int
+  assert earliest_slot_in_array <= slot.int
+  assert slot < current_block.slot
 
-  return state.recent_block_hashes[slot - earliest_slot_in_array]
+  return state.recent_block_hashes[slot.int - earliest_slot_in_array]
 
 func get_new_recent_block_hashes*(
   old_block_hashes: seq[Blake2_256_Digest],
