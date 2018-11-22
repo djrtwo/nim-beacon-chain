@@ -6,7 +6,7 @@
 # at your option. This file may not be copied, modified, or distributed except according to those terms.
 
 import
-  tables, hashes, sets,
+  tables, hashes,
   milagro_crypto, # Needed for signature hashing
   ../ssz, ../datatypes, ../private/helpers
 
@@ -30,10 +30,10 @@ type
 
   ConsensusState* = ref object
     beacon_chain*: BeaconChain
+    last_block_hash*: BlockHash
     messages*: TableRef[BLSSig, AttestationSignedData] # Validator messages
-    processed*: HashSet[BLSSig]                        # Keep track of processed messages
-    scores*: TableRef[BlockHash, int]                  # Final score for each proposed block, it is the highest score it has at any slot
-    scores_at_slot*: TableRef[SlotBlockHash, int]      # Score at each slot, if missing slot in slot_x < slot_missing < slot_y, use slot_x
+    scores*: CountTableRef[BlockHash]                  # Final score for each proposed block, it is the highest score it has at any slot
+    scores_at_slot*: CountTableRef[SlotBlockHash]      # Score at each slot, if missing slot in slot_x < slot_missing < slot_y, use slot_x
 
 # ############################################################
 #
@@ -73,7 +73,6 @@ func resetConsensus(
         beacon_chain: BeaconChain) =
   consensus.beacon_chain = beacon_chain
   consensus.messages.clear()
-  consensus.processed.clear()
   consensus.scores.clear()
   consensus.scores_at_slot.clear()
 
@@ -82,9 +81,8 @@ func newConsensus(
   new result
   result.beacon_chain = beacon_chain
   result.messages = newTable[BLSsig, AttestationSignedData]()
-  init result.processed
-  result.scores = newTable[BlockHash, int]()
-  result.scores_at_slot = newTable[SlotBlockHash, int]()
+  result.scores = newCountTable[BlockHash]()
+  result.scores_at_slot = newCountTable[SlotBlockHash]()
 
 # ############################################################
 #
@@ -131,17 +129,17 @@ func get_common_ancestor_slot(
 
 # We assume that block proposers are doing the fork choice rule.
 
-func broadcast_new_block(consensus: ConsensusState, beacon_state: beacon_state) =
+func broadcast_new_block(consensus: ConsensusState) =
   ## Stub - Run by block proposer
   ##   - Reset the consensusState
   ##   - Broadcast the new beacon block
   discard
 
-func on_receive_candidate_block(consensus: ConsensusState, beacon_state: beacon_state) =
+func on_receive_candidate_block(consensus: ConsensusState) =
   ## Stub - Run by validators once they received a block proposal
   discard
 
-func on_receive_consensus_block(consensus: ConsensusState, beacon_state: beacon_state) =
+func on_receive_consensus_block(consensus: ConsensusState) =
   ## Stub - Run by everyone once a Proof-of-Stake consensus is broadcasted
   ## This isn't be needed by full clients as they can reconstruct
   ## the distributed consensus from the previous state + candidate block + attestations
@@ -152,8 +150,7 @@ func on_receive_consensus_block(consensus: ConsensusState, beacon_state: beacon_
 func on_receive_attestation*(
         consensus: ConsensusState,
         sig: BLSSig,
-        attest_data: AttestationSignedData,
-        reprocess = false
+        attest_data: AttestationSignedData
     ) =
   ## Prerequisites:
   ##    - During `block_processing`, the `aggregate_sig` verifies the `attest_data`
@@ -162,15 +159,32 @@ func on_receive_attestation*(
 
   ## TODO: update `beacon_state.pending_attestations: seq[AttestationRecord]`
 
-  # 1. remove duplicates
-  if sig in consensus.processed and not reprocess:
+  # 2. Keep the most recent/highest slot message for each attester
+  #    i.e. "latest message driven"
+  if  sig in consensus.messages and
+      attest_data.slot < consensus.messages[sig].slot:
     return
 
-  # TODO: commit/rollback scheme to leave ConsensusState consistent
-  #       in case of failure
-  consensus.processed.incl sig
+  # TODO: ensure that attestation_slot > last main_chain block slot
+  consensus.messages[sig] = attest_data
 
+func score_forks*(consensus: ConsensusState): int =
+  ## The consensus object should not received new attestation at this point.
 
+  for msg in consensus.messages.values():
+    for i in countdown(msg.parent_hashes.len - 1, 0):
+
+      # If parent and child block have non-consecutive slots (holes),
+      # the parent is duplicated for each missing slot so a block can
+      # appear and have different score on multiple slot
+      let child: SlotBlockHash = (msg.slot - i.uint64, msg.parent_hashes[i])
+      consensus.scores_at_slot.inc(child, 1)
+
+      # The score of a block is its max score in any slot.
+      consensus.scores[child.block_hash] = max(
+            consensus.scores.getOrDefault(child.block_hash, 0), # Actual score if available, 0 otherwise
+            consensus.scores_at_slot[child]                     # Score at the current slot
+      )
 
 
 
